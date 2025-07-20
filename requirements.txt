@@ -1,0 +1,8 @@
+pystray
+keyboard
+sounddevice
+openai-whisper
+pyperclip
+numpy
+scipy
+soundfile
