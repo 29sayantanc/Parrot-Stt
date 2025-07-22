@@ -1,0 +1,29 @@
+# Python-specific ignores
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+*.egg
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# PyInstaller-specific ignores
+build/
+dist/
+*.spec
+
+# Operating System ignores
+.DS_Store
+thumbs.db
+
+# IDE-specific ignores (optional)
+.vscode/
+.idea/
+
+# Temporary files
+*.log
+*.tmp
