@@ -1,6 +1,8 @@
 # Parrot Transcriber
 
-![App Icon Placeholder](https://via.placeholder.com/64x64?text=STT)
+<img width="100" height="100" alt="parrot-svgrepo-com" src="https://github.com/user-attachments/assets/aa92592a-258d-4271-818d-3f83387b26b5" />
+
+
 
 Parrot Transcriber is a lightweight, background-running Windows desktop application that provides on-demand, real-time speech-to-text transcription. Simply press and hold a customizable hotkey, speak, and upon release, your words are instantly typed wherever your cursor is.
 
