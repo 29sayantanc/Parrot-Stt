@@ -25,6 +25,9 @@ As a user, I want to:
 *   ...be able to quit the application cleanly from the system tray.
 *   ...use the application offline for privacy and speed.
 *   ...distribute and install the application easily without needing Python installed.
+*   ...optionally enhance my speech with AI-powered writing assistance that understands the context of what I'm writing.
+*   ...configure AI settings including model selection and context window size.
+*   ...see visual feedback when AI processing is occurring.
 
 ## 4. Functional Requirements
 
@@ -60,6 +63,16 @@ As a user, I want to:
 *   **FR5.2:** The application SHALL provide a clean exit mechanism via the system tray menu.
 *   **FR5.3:** The application SHALL be distributable as a single executable file for Windows.
 
+### 4.6. AI-Powered Writing Assistance
+*   **FR6.1:** The application SHALL provide optional AI-powered text enhancement.
+*   **FR6.2:** When enabled, the application SHALL capture a screenshot upon hotkey release.
+*   **FR6.3:** The application SHALL send the screenshot and transcribed text to a local Ollama model.
+*   **FR6.4:** The application SHALL display "Processing with AI..." in the popup during AI processing.
+*   **FR6.5:** The application SHALL provide configuration options for AI model selection and context size.
+*   **FR6.6:** The application SHALL preserve the original meaning while enhancing text structure and coherence.
+*   **FR6.7:** The application SHALL analyze the platform and conversation context from the screenshot.
+*   **FR6.8:** The application SHALL limit screenshot retention to the last 20 screenshots for privacy.
+
 ## 5. Non-Functional Requirements
 
 ### 5.1. Performance
@@ -80,12 +93,19 @@ As a user, I want to:
 *   **NFR4.1:** The codebase SHALL be well-structured and commented.
 *   **NFR4.2:** Dependencies SHALL be clearly listed.
 
+### 5.5. AI Processing Performance
+*   **NFR5.1:** AI processing latency SHALL be reasonable (ideally < 10 seconds for typical use cases).
+*   **NFR5.2:** The application SHALL provide visual feedback during AI processing.
+*   **NFR5.3:** The application SHALL gracefully fall back to original transcription if AI processing fails.
+*   **NFR5.4:** Screenshot capture and processing SHALL respect user privacy settings.
+
 ## 6. Technical Considerations
 
 *   **Language:** Python
-*   **Libraries:** `pystray`, `keyboard`, `sounddevice`, `openai-whisper`, `pyperclip`, `numpy`, `scipy`, `soundfile`, `tkinter`, `queue`, `threading`, `json`, `time`.
+*   **Libraries:** `pystray`, `keyboard`, `sounddevice`, `openai-whisper`, `pyperclip`, `numpy`, `scipy`, `soundfile`, `tkinter`, `queue`, `threading`, `json`, `time`, `Pillow`, `requests`.
 *   **Packaging:** PyInstaller (for Windows .exe)
 *   **Whisper Model:** `base` model (configurable to `tiny`, `small`, etc. in `config.json`)
+*   **AI Models:** Multimodal models via Ollama (e.g., `qwen2.5-vl`)
 
 ## 7. Future Considerations (Out of Scope for Initial Release)
 

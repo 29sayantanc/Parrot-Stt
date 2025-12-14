@@ -1,6 +1,6 @@
 import pystray
 from pystray import MenuItem as item
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageGrab
 import threading
 import json
 import keyboard # New hotkey library
@@ -17,6 +17,9 @@ import queue # New import for inter-thread communication
 import time # For sleep in monitoring thread
 import os # New import for path handling
 import sys # New import for path handling
+import requests # New import for Ollama API
+import base64 # For Ollama image encoding
+from datetime import datetime # New import for screenshot naming
 
 # --- Helper function for PyInstaller path handling ---
 def resource_path(relative_path):
@@ -43,6 +46,15 @@ def save_config(new_config):
 config = load_config()
 HOTKEY = config.get("hotkey", "ctrl+shift+space") # Ensure F8 is set
 MODEL_NAME = config.get("whisper_model", "base")
+
+# AI Assisted Writing Configuration
+AI_CONFIG = config.get("ai_assisted_writing", {})
+AI_ENABLED = AI_CONFIG.get("enabled", False)
+AI_MODEL = AI_CONFIG.get("model", "qwen2.5-vl")
+AI_NUM_CTX = AI_CONFIG.get("num_ctx", 8192)
+AI_SCREENSHOT_QUALITY = AI_CONFIG.get("screenshot_quality", 90)
+AI_MAX_SCREENSHOTS = AI_CONFIG.get("max_screenshots", 20)
+AI_HOTSTART = AI_CONFIG.get("hotstart", True)
 
 is_recording = False
 recording_data = []
@@ -114,6 +126,9 @@ def check_popup_queue():
                 popup_root.deiconify()
             elif command == "hide":
                 popup_root.withdraw()
+            elif command == "ai_processing":
+                if popup_root and popup_root.winfo_exists():
+                    popup_label.config(text="Processing with AI...")
             elif command == "destroy":
                 popup_root.destroy()
                 break # Exit the loop and thread
@@ -158,6 +173,178 @@ def pulse_text_color():
 def run_popup_loop():
     create_popup_window()
     popup_root.mainloop()
+
+# --- AI Assisted Writing Functions ---
+def capture_screenshot():
+    """Capture full screen as high-quality PNG"""
+    try:
+        screenshot = ImageGrab.grab()
+        img_byte_arr = io.BytesIO()
+        screenshot.save(img_byte_arr, format='PNG')
+        return img_byte_arr.getvalue()
+    except Exception as e:
+        print(f"ERROR: Failed to capture screenshot: {e}")
+        return None
+
+def manage_screenshots():
+    """Manage screenshot retention - keep only last AI_MAX_SCREENSHOTS"""
+    screenshots_dir = resource_path("screenshots")
+    if not os.path.exists(screenshots_dir):
+        os.makedirs(screenshots_dir)
+    
+    # Get all screenshot files sorted by creation time
+    files = [os.path.join(screenshots_dir, f) for f in os.listdir(screenshots_dir)
+             if f.endswith('.png')]
+    files.sort(key=lambda x: os.path.getctime(x))
+    
+    # Delete oldest files if we exceed the limit
+    deleted_count = 0
+    while len(files) > AI_MAX_SCREENSHOTS:
+        try:
+            os.remove(files[0])
+            deleted_count += 1
+            files.pop(0)
+        except Exception as e:
+            print(f"ERROR: Failed to delete old screenshot: {e}")
+            break
+    
+    if deleted_count > 0:
+        print(f"INFO: Deleted {deleted_count} old screenshot(s) to maintain limit of {AI_MAX_SCREENSHOTS}")
+
+def save_screenshot(screenshot_bytes):
+    """Save screenshot to disk for debugging/retention"""
+    if not AI_CONFIG.get("save_screenshots", False):
+        return
+    
+    try:
+        screenshots_dir = resource_path("screenshots")
+        if not os.path.exists(screenshots_dir):
+            os.makedirs(screenshots_dir)
+            print(f"INFO: Created screenshots directory at: {screenshots_dir}")
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = os.path.join(screenshots_dir, f"screenshot_{timestamp}.png")
+        
+        with open(filename, 'wb') as f:
+            f.write(screenshot_bytes)
+        
+        print(f"INFO: Screenshot saved to: {filename}")
+        
+        # Manage screenshot retention
+        manage_screenshots()
+    except Exception as e:
+        print(f"ERROR: Failed to save screenshot: {e}")
+
+def fetch_ollama_models():
+    """Fetch available models from Ollama API"""
+    try:
+        response = requests.get("http://localhost:11434/api/tags", timeout=10)
+        if response.status_code == 200:
+            models_data = response.json()
+            # Filter for multimodal models and sort alphabetically
+            multimodal_models = []
+            all_models = []
+            
+            for model_info in models_data.get("models", []):
+                model_name = model_info.get("name", "")
+                all_models.append(model_name)
+                # Common multimodal models - add more as needed
+                if any(keyword in model_name.lower() for keyword in ["qwen", "llava", "bakllava", "moondream", "cogvlm"]):
+                    multimodal_models.append(model_name)
+            
+            # Return multimodal models first, then all models
+            return sorted(multimodal_models) + sorted(set(all_models) - set(multimodal_models))
+        else:
+            print(f"WARNING: Failed to fetch Ollama models: HTTP {response.status_code}")
+            return []
+    except Exception as e:
+        print(f"ERROR: Failed to fetch Ollama models: {e}")
+        return []
+
+def initialize_ai_model():
+    """Initialize the AI model if hotstart is enabled"""
+    if not AI_ENABLED or not AI_HOTSTART:
+        return False
+    
+    try:
+        # Send a minimal request to warm up the model
+        response = requests.post(
+            "http://localhost:11434/api/generate",
+            json={
+                "model": AI_MODEL,
+                "prompt": "Initializing model...",
+                "stream": False
+            },
+            timeout=30
+        )
+        print(f"SUCCESS: AI model {AI_MODEL} initialized")
+        return True
+    except Exception as e:
+        print(f"WARNING: AI model initialization failed: {e}")
+        print("AI features will be disabled")
+        return False
+
+def enhance_text_with_ai(original_text, screenshot_bytes):
+    """Send text and screenshot to Ollama for context-aware enhancement"""
+    try:
+        # Update popup to show AI processing
+        popup_queue.put("ai_processing")
+
+        # Base64 encode the image
+        encoded_image = base64.b64encode(screenshot_bytes).decode('utf-8')
+        
+        prompt = f"""
+        You are an AI writing assistant. Your goal is to enhance the user's spoken text based on the context provided in the screenshot.
+
+        **User's raw text:** "{original_text}"
+
+        **Your instructions:**
+
+        1.  **Analyze the Screenshot Deeply:**
+            *   What application is this (e.g., Slack, Gmail, Word, Twitter)?
+            *   What is the context of the conversation or document? Read any visible text, especially any text in the active input field or immediately preceding the cursor, to understand if the user is replying, continuing a thought, or starting a new conversation.
+            *   Determine the appropriate tone: is it a formal document, a casual chat with a friend, a professional email?
+
+        2.  **Rewrite the User's Text:**
+            *   **Crucially, use the screenshot's context to inform your rewrite.** The goal is not just to correct grammar, but to make the text fit perfectly into the situation shown.
+            *   Rephrase the user's raw text to improve its clarity, style, and impact. This may involve **shortening or lengthening** the text as appropriate.
+            *   Adjust the vocabulary and sentence structure to match the determined tone and context.
+            *   Ensure the rewritten text is coherent with any previous messages visible in the screenshot.
+            *   Preserve the user's core message and intent, but do not simply repeat their words. The output should be a clear enhancement.
+            *   If the user's raw text is a question, ensure the rewritten text remains a question and does not attempt to answer it. Your role is to refine the user's query, not to provide an answer.
+
+        3.  **Output:**
+            *   Return ONLY the rewritten text. Do not include any of your analysis, explanations, or any other text.
+            *   **The rewritten text MUST NOT be enclosed in any quotation marks or special characters.**
+
+        **Rewritten text (without quotes):**
+        """
+        
+        payload = {
+            'model': AI_MODEL,
+            'prompt': prompt,
+            'num_ctx': AI_NUM_CTX,
+            'stream': False,
+            'images': [encoded_image]
+        }
+        
+        response = requests.post(
+            "http://localhost:11434/api/generate",
+            json=payload,
+            timeout=30 # Increased timeout for potentially slow models
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            return result.get('response', original_text)
+        else:
+            print(f"WARNING: AI processing failed with status {response.status_code}")
+            print(f"Response: {response.text}") # Print detailed error
+            return original_text
+            
+    except Exception as e:
+        print(f"ERROR: AI processing failed: {e}")
+        return original_text
 
 # --- Hotkey Configuration Window Functions ---
 def show_hotkey_config_window():
@@ -250,6 +437,165 @@ def on_hotkey_config_close():
     if hotkey_config_root and hotkey_config_root.winfo_exists():
         hotkey_config_root.destroy()
 
+# --- AI Configuration Window Functions ---
+ai_config_root = None
+ai_model_var = None
+ai_ctx_var = None
+ai_enabled_var = None
+ai_hotstart_var = None
+ai_save_screenshots_var = None
+
+def show_ai_config_window():
+    global ai_config_root, ai_model_var, ai_ctx_var, ai_enabled_var, ai_hotstart_var, ai_save_screenshots_var
+    
+    if ai_config_root and ai_config_root.winfo_exists():
+        ai_config_root.lift()
+        return
+    
+    ai_config_root = tk.Toplevel()
+    ai_config_root.title("AI Writing Settings")
+    ai_config_root.geometry("400x450")
+    ai_config_root.attributes('-topmost', True)
+    ai_config_root.protocol("WM_DELETE_WINDOW", on_ai_config_close)
+    
+    # Enable AI Assistance
+    ai_enabled_var = tk.BooleanVar(value=AI_ENABLED)
+    tk.Checkbutton(ai_config_root, text="Enable AI Writing Assistance", 
+                   variable=ai_enabled_var, font=("Arial", 10, "bold")).pack(pady=10, anchor='w', padx=20)
+    
+    # Model Selection with loading indicator
+    model_frame = tk.Frame(ai_config_root)
+    model_frame.pack(pady=(10, 0), anchor='w', padx=20)
+    
+    tk.Label(model_frame, text="AI Model:", font=("Arial", 10)).pack(anchor='w')
+    
+    ai_model_var = tk.StringVar(value=AI_MODEL)
+    
+    # Add a loading label that will be replaced
+    loading_label = tk.Label(model_frame, text="Loading models from Ollama...", fg="gray")
+    loading_label.pack(anchor='w', pady=5)
+    
+    # Fetch models in background and update UI
+    def update_model_dropdown():
+        try:
+            models = fetch_ollama_models()
+            if models:
+                loading_label.destroy()
+                model_dropdown = tk.OptionMenu(model_frame, ai_model_var, *models)
+                model_dropdown.pack(anchor='w')
+                # Set to current model if available
+                if AI_MODEL in models:
+                    ai_model_var.set(AI_MODEL)
+            else:
+                loading_label.config(text="No models found - is Ollama running?", fg="red")
+        except Exception as e:
+            loading_label.config(text=f"Error loading models: {e}", fg="red")
+    
+    threading.Thread(target=update_model_dropdown, daemon=True).start()
+    
+    # Context Size with popular options
+    tk.Label(ai_config_root, text="Context Size (num_ctx):", font=("Arial", 10)).pack(pady=(10, 0), anchor='w', padx=20)
+    
+    # Popular context sizes - simplified to just dropdown
+    context_sizes = ["2048", "4096", "8192", "16384", "32768"]
+    ai_ctx_var = tk.StringVar(value=str(AI_NUM_CTX))
+    
+    # Simple dropdown - no custom entry needed
+    ctx_dropdown = tk.OptionMenu(ai_config_root, ai_ctx_var, *context_sizes)
+    ctx_dropdown.pack(pady=5, anchor='w', padx=20)
+    
+    # Hotstart
+    ai_hotstart_var = tk.BooleanVar(value=AI_HOTSTART)
+    tk.Checkbutton(ai_config_root, text="Hotstart Model (reduce latency)", 
+                   variable=ai_hotstart_var).pack(pady=10, anchor='w', padx=20)
+    
+    # Save Screenshots (for debugging)
+    ai_save_screenshots_var = tk.BooleanVar(value=AI_CONFIG.get("save_screenshots", False))
+    tk.Checkbutton(ai_config_root, text="Save Screenshots (for debugging)", 
+                   variable=ai_save_screenshots_var).pack(pady=10, anchor='w', padx=20)
+    
+    # Save Button - Make it more prominent
+    save_frame = tk.Frame(ai_config_root)
+    save_frame.pack(pady=20, fill=tk.X, padx=40)
+    
+    save_button = tk.Button(save_frame, text="💾 Save Settings", 
+                           command=save_ai_settings, bg="#4CAF50", fg="white",
+                           font=("Arial", 10, "bold"), height=2)
+    save_button.pack(fill=tk.X)
+    
+    # Center window
+    ai_config_root.update_idletasks()
+    x = ai_config_root.winfo_screenwidth() // 2 - ai_config_root.winfo_width() // 2
+    y = ai_config_root.winfo_screenheight() // 2 - ai_config_root.winfo_height() // 2
+    ai_config_root.geometry(f"+{x}+{y}")
+
+def save_ai_settings():
+    global AI_ENABLED, AI_MODEL, AI_NUM_CTX, AI_HOTSTART, AI_CONFIG
+    
+    # Update global variables
+    AI_ENABLED = ai_enabled_var.get()
+    AI_MODEL = ai_model_var.get()
+    
+    # Get context size from dropdown or custom entry
+    if ai_ctx_var.get() == "Custom...":
+        # Get value from custom entry field
+        try:
+            custom_ctx_value = ctx_frame.custom_entry.get()
+            AI_NUM_CTX = int(custom_ctx_value)
+        except (ValueError, AttributeError):
+            AI_NUM_CTX = 8192  # Default fallback
+            print("WARNING: Invalid custom context size, using default 8192")
+    else:
+        AI_NUM_CTX = int(ai_ctx_var.get())
+    
+    AI_HOTSTART = ai_hotstart_var.get()
+    
+    # Update config
+    AI_CONFIG = {
+        "enabled": AI_ENABLED,
+        "model": AI_MODEL,
+        "num_ctx": AI_NUM_CTX,
+        "screenshot_quality": AI_SCREENSHOT_QUALITY,
+        "max_screenshots": AI_MAX_SCREENSHOTS,
+        "hotstart": AI_HOTSTART,
+        "save_screenshots": ai_save_screenshots_var.get()
+    }
+    
+    # Save to config file
+    current_config = load_config()
+    current_config["ai_assisted_writing"] = AI_CONFIG
+    save_config(current_config)
+    
+    print("=" * 60)
+    print("📋 AI WRITING SETTINGS UPDATED")
+    print("=" * 60)
+    print(f"✅ Status: {'ENABLED' if AI_ENABLED else 'DISABLED'}")
+    print(f"🤖 Model: {AI_MODEL}")
+    print(f"📊 Context Size: {AI_NUM_CTX}")
+    print(f"⚡ Hotstart: {'ON' if AI_HOTSTART else 'OFF'}")
+    print(f"💾 Screenshot Save: {'ON' if AI_CONFIG.get('save_screenshots', False) else 'OFF'}")
+    print("=" * 60)
+    
+    # Show confirmation to user
+    if ai_config_root and ai_config_root.winfo_exists():
+        # Add temporary confirmation label
+        confirmation = tk.Label(ai_config_root, text="✅ Settings saved successfully!", 
+                              fg="green", font=("Arial", 10, "bold"))
+        confirmation.pack(pady=10)
+        # Remove after 2 seconds
+        ai_config_root.after(2000, confirmation.destroy)
+    
+    # Initialize model if hotstart is enabled
+    if AI_ENABLED and AI_HOTSTART:
+        threading.Thread(target=initialize_ai_model, daemon=True).start()
+    
+    on_ai_config_close()
+
+def on_ai_config_close():
+    global ai_config_root
+    if ai_config_root and ai_config_root.winfo_exists():
+        ai_config_root.destroy()
+
 # --- Core Application Logic ---
 def register_main_hotkeys():
     global main_hotkey_press_handle
@@ -320,13 +666,37 @@ def stop_recording_and_transcribe():
             try:
                 result = model.transcribe(audio_np, fp16=False) # Pass NumPy array
                 transcribed_text = result["text"]
-                print(f"SUCCESS: Transcription complete. Text written to active window.")
-                print(f"Text: {transcribed_text}")
+                print(f"SUCCESS: Transcription complete.")
+                print(f"Original text: {transcribed_text}")
 
+                # AI Processing (if enabled)
+                final_text = transcribed_text
+                if AI_ENABLED:
+                    print("DEBUG: Capturing screenshot for AI processing...")
+                    screenshot_bytes = capture_screenshot()
+                    
+                    if screenshot_bytes:
+                        save_screenshot(screenshot_bytes) # Save the screenshot to disk
+                        print("DEBUG: Sending to AI model for enhancement...")
+                        print(f"🔵 ORIGINAL TEXT: {transcribed_text}")
+                        final_text = enhance_text_with_ai(transcribed_text, screenshot_bytes)
+                        print(f"🟢 ENHANCED TEXT: {final_text}")
+                        print("─" * 50)  # Separator for readability
+                    else:
+                        print("WARNING: Screenshot capture failed, using original text")
+                        final_text = transcribed_text
+                
                 # Write to active window
-                keyboard.write(transcribed_text)
+                print("DEBUG: Writing text to active window...")
+                keyboard.write(final_text)
+                
+                # Hide popup after processing
+                popup_queue.put("hide")
+                
             except Exception as e:
                 print(f"ERROR: An error occurred during transcription: {e}")
+                # Make sure popup is hidden on error
+                popup_queue.put("hide")
         else:
             print("DEBUG: No audio data recorded.")
 
@@ -362,6 +732,7 @@ icon = pystray.Icon(
     title='Parrot Transcriber',
     menu=pystray.Menu(
         item('Configure Hotkey', show_hotkey_config_window),
+        item('AI Writing Settings', show_ai_config_window),
         item('Quit', on_quit)
     )
 )
@@ -389,7 +760,12 @@ def main():
 
     # Register hotkey using the keyboard library
     register_main_hotkeys() # Initial registration
-
+    
+    # Initialize AI model if enabled and hotstart is on
+    if AI_ENABLED and AI_HOTSTART:
+        print("DEBUG: Initializing AI model...")
+        threading.Thread(target=initialize_ai_model, daemon=True).start()
+    
     # Run the system tray icon on the main thread (this is a blocking call)
     icon.run()
 

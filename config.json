@@ -1,4 +1,13 @@
 {
   "hotkey": "f8",
-  "whisper_model": "base"
+  "whisper_model": "base",
+  "ai_assisted_writing": {
+    "enabled": true,
+    "model": "qwen2.5vl:latest",
+    "num_ctx": 8192,
+    "screenshot_quality": 90,
+    "max_screenshots": 20,
+    "hotstart": true,
+    "save_screenshots": true
+  }
 }
