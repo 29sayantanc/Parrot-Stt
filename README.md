@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <strong>Your personal AI-powered speech-to-text assistant for Windows.</strong>
+  <strong>Your personal AI-powered speech-to-text assistant </strong>
 </p>
 
 ---
@@ -29,7 +29,7 @@ What makes Parrot special is its optional **AI-powered writing assistance**, whi
 
 ---
 
-## 🚀 Installation (Windows) (For Mac/Linux use the Python script)
+## 🚀 Installation
 
 Getting started with Parrot Transcriber is easy. Just follow these steps:
 
