@@ -197,13 +197,18 @@ def manage_screenshots():
     files.sort(key=lambda x: os.path.getctime(x))
     
     # Delete oldest files if we exceed the limit
+    deleted_count = 0
     while len(files) > AI_MAX_SCREENSHOTS:
         try:
             os.remove(files[0])
+            deleted_count += 1
             files.pop(0)
         except Exception as e:
             print(f"ERROR: Failed to delete old screenshot: {e}")
             break
+    
+    if deleted_count > 0:
+        print(f"INFO: Deleted {deleted_count} old screenshot(s) to maintain limit of {AI_MAX_SCREENSHOTS}")
 
 def save_screenshot(screenshot_bytes):
     """Save screenshot to disk for debugging/retention"""
@@ -214,12 +219,15 @@ def save_screenshot(screenshot_bytes):
         screenshots_dir = resource_path("screenshots")
         if not os.path.exists(screenshots_dir):
             os.makedirs(screenshots_dir)
+            print(f"INFO: Created screenshots directory at: {screenshots_dir}")
         
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = os.path.join(screenshots_dir, f"screenshot_{timestamp}.png")
         
         with open(filename, 'wb') as f:
             f.write(screenshot_bytes)
+        
+        print(f"INFO: Screenshot saved to: {filename}")
         
         # Manage screenshot retention
         manage_screenshots()
@@ -569,6 +577,15 @@ def save_ai_settings():
     
     print(f"SUCCESS: AI settings saved. Model: {AI_MODEL}, Context: {AI_NUM_CTX}, Enabled: {AI_ENABLED}")
     
+    # Show confirmation to user
+    if ai_config_root and ai_config_root.winfo_exists():
+        # Add temporary confirmation label
+        confirmation = tk.Label(ai_config_root, text="✅ Settings saved successfully!", 
+                              fg="green", font=("Arial", 10, "bold"))
+        confirmation.pack(pady=10)
+        # Remove after 2 seconds
+        ai_config_root.after(2000, confirmation.destroy)
+    
     # Initialize model if hotstart is enabled
     if AI_ENABLED and AI_HOTSTART:
         threading.Thread(target=initialize_ai_model, daemon=True).start()
@@ -661,10 +678,13 @@ def stop_recording_and_transcribe():
                     
                     if screenshot_bytes:
                         print("DEBUG: Sending to AI model for enhancement...")
+                        print(f"🔵 ORIGINAL TEXT: {transcribed_text}")
                         final_text = enhance_text_with_ai(transcribed_text, screenshot_bytes)
-                        print(f"Enhanced text: {final_text}")
+                        print(f"🟢 ENHANCED TEXT: {final_text}")
+                        print("─" * 50)  # Separator for readability
                     else:
                         print("WARNING: Screenshot capture failed, using original text")
+                        final_text = transcribed_text
                 
                 # Write to active window
                 print("DEBUG: Writing text to active window...")
