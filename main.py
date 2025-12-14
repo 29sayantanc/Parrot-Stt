@@ -226,6 +226,32 @@ def save_screenshot(screenshot_bytes):
     except Exception as e:
         print(f"ERROR: Failed to save screenshot: {e}")
 
+def fetch_ollama_models():
+    """Fetch available models from Ollama API"""
+    try:
+        response = requests.get("http://localhost:11434/api/tags", timeout=10)
+        if response.status_code == 200:
+            models_data = response.json()
+            # Filter for multimodal models and sort alphabetically
+            multimodal_models = []
+            all_models = []
+            
+            for model_info in models_data.get("models", []):
+                model_name = model_info.get("name", "")
+                all_models.append(model_name)
+                # Common multimodal models - add more as needed
+                if any(keyword in model_name.lower() for keyword in ["qwen", "llava", "bakllava", "moondream", "cogvlm"]):
+                    multimodal_models.append(model_name)
+            
+            # Return multimodal models first, then all models
+            return sorted(multimodal_models) + sorted(set(all_models) - set(multimodal_models))
+        else:
+            print(f"WARNING: Failed to fetch Ollama models: HTTP {response.status_code}")
+            return []
+    except Exception as e:
+        print(f"ERROR: Failed to fetch Ollama models: {e}")
+        return []
+
 def initialize_ai_model():
     """Initialize the AI model if hotstart is enabled"""
     if not AI_ENABLED or not AI_HOTSTART:
@@ -421,18 +447,67 @@ def show_ai_config_window():
     tk.Checkbutton(ai_config_root, text="Enable AI Writing Assistance", 
                    variable=ai_enabled_var, font=("Arial", 10, "bold")).pack(pady=10, anchor='w', padx=20)
     
-    # Model Selection
-    tk.Label(ai_config_root, text="AI Model:", font=("Arial", 10)).pack(pady=(10, 0), anchor='w', padx=20)
-    ai_model_var = tk.StringVar(value=AI_MODEL)
-    model_dropdown = tk.OptionMenu(ai_config_root, ai_model_var, 
-                                   "qwen2.5-vl", "llava", "bakllava", "moondream")
-    model_dropdown.pack(pady=5, anchor='w', padx=20)
+    # Model Selection with loading indicator
+    model_frame = tk.Frame(ai_config_root)
+    model_frame.pack(pady=(10, 0), anchor='w', padx=20)
     
-    # Context Size
+    tk.Label(model_frame, text="AI Model:", font=("Arial", 10)).pack(anchor='w')
+    
+    ai_model_var = tk.StringVar(value=AI_MODEL)
+    
+    # Add a loading label that will be replaced
+    loading_label = tk.Label(model_frame, text="Loading models from Ollama...", fg="gray")
+    loading_label.pack(anchor='w', pady=5)
+    
+    # Fetch models in background and update UI
+    def update_model_dropdown():
+        try:
+            models = fetch_ollama_models()
+            if models:
+                loading_label.destroy()
+                model_dropdown = tk.OptionMenu(model_frame, ai_model_var, *models)
+                model_dropdown.pack(anchor='w')
+                # Set to current model if available
+                if AI_MODEL in models:
+                    ai_model_var.set(AI_MODEL)
+            else:
+                loading_label.config(text="No models found - is Ollama running?", fg="red")
+        except Exception as e:
+            loading_label.config(text=f"Error loading models: {e}", fg="red")
+    
+    threading.Thread(target=update_model_dropdown, daemon=True).start()
+    
+    # Context Size with popular options
     tk.Label(ai_config_root, text="Context Size (num_ctx):", font=("Arial", 10)).pack(pady=(10, 0), anchor='w', padx=20)
-    ai_ctx_var = tk.StringVar(value=str(AI_NUM_CTX))
-    ctx_entry = tk.Entry(ai_config_root, textvariable=ai_ctx_var)
-    ctx_entry.pack(pady=5, anchor='w', padx=20)
+    
+    # Popular context sizes
+    context_sizes = ["2048", "4096", "8192", "16384", "32768", "Custom..."]
+    ai_ctx_var = tk.StringVar(value=str(AI_NUM_CTX) if str(AI_NUM_CTX) in context_sizes else "Custom...")
+    
+    ctx_frame = tk.Frame(ai_config_root)
+    ctx_frame.pack(pady=5, anchor='w', padx=20)
+    
+    ctx_dropdown = tk.OptionMenu(ctx_frame, ai_ctx_var, *context_sizes, command=lambda _: update_ctx_entry())
+    ctx_dropdown.pack(side=tk.LEFT)
+    
+    # Entry field for custom context size
+    custom_ctx_entry = tk.Entry(ctx_frame, width=8)
+    if str(AI_NUM_CTX) not in context_sizes:
+        custom_ctx_entry.insert(0, str(AI_NUM_CTX))
+    custom_ctx_entry.pack(side=tk.LEFT, padx=5)
+    
+    def update_ctx_entry():
+        if ai_ctx_var.get() == "Custom...":
+            custom_ctx_entry.config(state=tk.NORMAL)
+            custom_ctx_entry.delete(0, tk.END)
+            custom_ctx_entry.insert(0, str(AI_NUM_CTX))
+        else:
+            custom_ctx_entry.config(state=tk.DISABLED)
+            custom_ctx_entry.delete(0, tk.END)
+            custom_ctx_entry.insert(0, ai_ctx_var.get())
+    
+    # Store reference to custom entry for saving
+    ctx_frame.custom_entry = custom_ctx_entry
     
     # Hotstart
     ai_hotstart_var = tk.BooleanVar(value=AI_HOTSTART)
@@ -461,7 +536,19 @@ def save_ai_settings():
     # Update global variables
     AI_ENABLED = ai_enabled_var.get()
     AI_MODEL = ai_model_var.get()
-    AI_NUM_CTX = int(ai_ctx_var.get())
+    
+    # Get context size from dropdown or custom entry
+    if ai_ctx_var.get() == "Custom...":
+        # Get value from custom entry field
+        try:
+            custom_ctx_value = ctx_frame.custom_entry.get()
+            AI_NUM_CTX = int(custom_ctx_value)
+        except (ValueError, AttributeError):
+            AI_NUM_CTX = 8192  # Default fallback
+            print("WARNING: Invalid custom context size, using default 8192")
+    else:
+        AI_NUM_CTX = int(ai_ctx_var.get())
+    
     AI_HOTSTART = ai_hotstart_var.get()
     
     # Update config
