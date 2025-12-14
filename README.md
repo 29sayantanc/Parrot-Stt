@@ -29,7 +29,7 @@ What makes Parrot special is its optional **AI-powered writing assistance**, whi
 
 ---
 
-## 🚀 Installation
+## 🚀 Installation (Windows) (For Mac/Linux use the Python script)
 
 Getting started with Parrot Transcriber is easy. Just follow these steps:
 
