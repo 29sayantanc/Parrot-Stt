@@ -527,10 +527,14 @@ def show_ai_config_window():
     tk.Checkbutton(ai_config_root, text="Save Screenshots (for debugging)", 
                    variable=ai_save_screenshots_var).pack(pady=10, anchor='w', padx=20)
     
-    # Save Button
-    save_button = tk.Button(ai_config_root, text="Save Settings", 
-                           command=save_ai_settings, bg="#4CAF50", fg="white")
-    save_button.pack(pady=20)
+    # Save Button - Make it more prominent
+    save_frame = tk.Frame(ai_config_root)
+    save_frame.pack(pady=20, fill=tk.X, padx=40)
+    
+    save_button = tk.Button(save_frame, text="💾 Save Settings", 
+                           command=save_ai_settings, bg="#4CAF50", fg="white",
+                           font=("Arial", 10, "bold"), height=2)
+    save_button.pack(fill=tk.X)
     
     # Center window
     ai_config_root.update_idletasks()
@@ -575,7 +579,15 @@ def save_ai_settings():
     current_config["ai_assisted_writing"] = AI_CONFIG
     save_config(current_config)
     
-    print(f"SUCCESS: AI settings saved. Model: {AI_MODEL}, Context: {AI_NUM_CTX}, Enabled: {AI_ENABLED}")
+    print("=" * 60)
+    print("📋 AI WRITING SETTINGS UPDATED")
+    print("=" * 60)
+    print(f"✅ Status: {'ENABLED' if AI_ENABLED else 'DISABLED'}")
+    print(f"🤖 Model: {AI_MODEL}")
+    print(f"📊 Context Size: {AI_NUM_CTX}")
+    print(f"⚡ Hotstart: {'ON' if AI_HOTSTART else 'OFF'}")
+    print(f"💾 Screenshot Save: {'ON' if AI_CONFIG.get('save_screenshots', False) else 'OFF'}")
+    print("=" * 60)
     
     # Show confirmation to user
     if ai_config_root and ai_config_root.winfo_exists():
