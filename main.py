@@ -18,6 +18,7 @@ import time # For sleep in monitoring thread
 import os # New import for path handling
 import sys # New import for path handling
 import requests # New import for Ollama API
+import base64 # For Ollama image encoding
 from datetime import datetime # New import for screenshot naming
 
 # --- Helper function for PyInstaller path handling ---
@@ -179,7 +180,7 @@ def capture_screenshot():
     try:
         screenshot = ImageGrab.grab()
         img_byte_arr = io.BytesIO()
-        screenshot.save(img_byte_arr, format='PNG', quality=AI_SCREENSHOT_QUALITY)
+        screenshot.save(img_byte_arr, format='PNG')
         return img_byte_arr.getvalue()
     except Exception as e:
         print(f"ERROR: Failed to capture screenshot: {e}")
@@ -288,43 +289,49 @@ def enhance_text_with_ai(original_text, screenshot_bytes):
     try:
         # Update popup to show AI processing
         popup_queue.put("ai_processing")
+
+        # Base64 encode the image
+        encoded_image = base64.b64encode(screenshot_bytes).decode('utf-8')
         
         prompt = f"""
-        Analyze the attached screenshot and the following user text: '{original_text}'
-        
-        1. PLATFORM ANALYSIS:
-        - Identify the application/platform shown in the screenshot
-        - Determine if this is formal (email, document) or informal (chat, social media)
-        - Note any specific platform conventions
-        
-        2. CONTEXT ANALYSIS:
-        - Extract any previous messages or text visible in the screenshot
-        - Identify what the user is replying to or continuing
-        - Note any conversation history or thread context
-        
-        3. TEXT ENHANCEMENT:
-        - Preserve the exact meaning of the user's spoken text
-        - Improve sentence structure and grammar
-        - Adjust vocabulary to match the platform and context
-        - Ensure coherence with any previous text
-        - Return ONLY the enhanced text, no explanations or markings
-        
-        Enhanced text:
+        You are an AI writing assistant. Your goal is to enhance the user's spoken text based on the context provided in the screenshot.
+
+        **User's raw text:** "{original_text}"
+
+        **Your instructions:**
+
+        1.  **Analyze the Screenshot Deeply:**
+            *   What application is this (e.g., Slack, Gmail, Word, Twitter)?
+            *   What is the context of the conversation or document? Read any visible text, especially any text in the active input field or immediately preceding the cursor, to understand if the user is replying, continuing a thought, or starting a new conversation.
+            *   Determine the appropriate tone: is it a formal document, a casual chat with a friend, a professional email?
+
+        2.  **Rewrite the User's Text:**
+            *   **Crucially, use the screenshot's context to inform your rewrite.** The goal is not just to correct grammar, but to make the text fit perfectly into the situation shown.
+            *   Rephrase the user's raw text to improve its clarity, style, and impact. This may involve **shortening or lengthening** the text as appropriate.
+            *   Adjust the vocabulary and sentence structure to match the determined tone and context.
+            *   Ensure the rewritten text is coherent with any previous messages visible in the screenshot.
+            *   Preserve the user's core message and intent, but do not simply repeat their words. The output should be a clear enhancement.
+            *   If the user's raw text is a question, ensure the rewritten text remains a question and does not attempt to answer it. Your role is to refine the user's query, not to provide an answer.
+
+        3.  **Output:**
+            *   Return ONLY the rewritten text. Do not include any of your analysis, explanations, or any other text.
+            *   **The rewritten text MUST NOT be enclosed in any quotation marks or special characters.**
+
+        **Rewritten text (without quotes):**
         """
         
-        files = {'image': ('screenshot.png', screenshot_bytes, 'image/png')}
-        data = {
+        payload = {
             'model': AI_MODEL,
             'prompt': prompt,
             'num_ctx': AI_NUM_CTX,
-            'stream': False
+            'stream': False,
+            'images': [encoded_image]
         }
         
         response = requests.post(
             "http://localhost:11434/api/generate",
-            files=files,
-            data=data,
-            timeout=15
+            json=payload,
+            timeout=30 # Increased timeout for potentially slow models
         )
         
         if response.status_code == 200:
@@ -332,6 +339,7 @@ def enhance_text_with_ai(original_text, screenshot_bytes):
             return result.get('response', original_text)
         else:
             print(f"WARNING: AI processing failed with status {response.status_code}")
+            print(f"Response: {response.text}") # Print detailed error
             return original_text
             
     except Exception as e:
@@ -446,7 +454,7 @@ def show_ai_config_window():
     
     ai_config_root = tk.Toplevel()
     ai_config_root.title("AI Writing Settings")
-    ai_config_root.geometry("400x350")
+    ai_config_root.geometry("400x450")
     ai_config_root.attributes('-topmost', True)
     ai_config_root.protocol("WM_DELETE_WINDOW", on_ai_config_close)
     
@@ -488,34 +496,13 @@ def show_ai_config_window():
     # Context Size with popular options
     tk.Label(ai_config_root, text="Context Size (num_ctx):", font=("Arial", 10)).pack(pady=(10, 0), anchor='w', padx=20)
     
-    # Popular context sizes
-    context_sizes = ["2048", "4096", "8192", "16384", "32768", "Custom..."]
-    ai_ctx_var = tk.StringVar(value=str(AI_NUM_CTX) if str(AI_NUM_CTX) in context_sizes else "Custom...")
+    # Popular context sizes - simplified to just dropdown
+    context_sizes = ["2048", "4096", "8192", "16384", "32768"]
+    ai_ctx_var = tk.StringVar(value=str(AI_NUM_CTX))
     
-    ctx_frame = tk.Frame(ai_config_root)
-    ctx_frame.pack(pady=5, anchor='w', padx=20)
-    
-    ctx_dropdown = tk.OptionMenu(ctx_frame, ai_ctx_var, *context_sizes, command=lambda _: update_ctx_entry())
-    ctx_dropdown.pack(side=tk.LEFT)
-    
-    # Entry field for custom context size
-    custom_ctx_entry = tk.Entry(ctx_frame, width=8)
-    if str(AI_NUM_CTX) not in context_sizes:
-        custom_ctx_entry.insert(0, str(AI_NUM_CTX))
-    custom_ctx_entry.pack(side=tk.LEFT, padx=5)
-    
-    def update_ctx_entry():
-        if ai_ctx_var.get() == "Custom...":
-            custom_ctx_entry.config(state=tk.NORMAL)
-            custom_ctx_entry.delete(0, tk.END)
-            custom_ctx_entry.insert(0, str(AI_NUM_CTX))
-        else:
-            custom_ctx_entry.config(state=tk.DISABLED)
-            custom_ctx_entry.delete(0, tk.END)
-            custom_ctx_entry.insert(0, ai_ctx_var.get())
-    
-    # Store reference to custom entry for saving
-    ctx_frame.custom_entry = custom_ctx_entry
+    # Simple dropdown - no custom entry needed
+    ctx_dropdown = tk.OptionMenu(ai_config_root, ai_ctx_var, *context_sizes)
+    ctx_dropdown.pack(pady=5, anchor='w', padx=20)
     
     # Hotstart
     ai_hotstart_var = tk.BooleanVar(value=AI_HOTSTART)
@@ -689,6 +676,7 @@ def stop_recording_and_transcribe():
                     screenshot_bytes = capture_screenshot()
                     
                     if screenshot_bytes:
+                        save_screenshot(screenshot_bytes) # Save the screenshot to disk
                         print("DEBUG: Sending to AI model for enhancement...")
                         print(f"🔵 ORIGINAL TEXT: {transcribed_text}")
                         final_text = enhance_text_with_ai(transcribed_text, screenshot_bytes)

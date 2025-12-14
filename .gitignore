@@ -16,6 +16,9 @@ build/
 dist/
 *.spec
 
+# Application-specific ignores
+screenshots/
+
 # Operating System ignores
 .DS_Store
 thumbs.db
