@@ -14,6 +14,7 @@ Parrot Transcriber is a lightweight, background-running Windows desktop applicat
 *   **Visual Feedback:** A subtle, pulsing pop-up indicates when recording is active.
 *   **Offline Transcription:** Powered by the Whisper ASR model, ensuring privacy and speed without an internet connection.
 *   **Dynamic Microphone Support:** Automatically detects and adapts to your microphone's sample rate.
+*   **AI-Powered Writing Assistance:** (Optional) Enhances your speech with context-aware rewriting using local multimodal AI models.
 
 ## 🚀 Installation (Coming Soon: Executable)
 
@@ -68,6 +69,38 @@ To change the hotkey:
 5.  Click "Save Hotkey."
     The application will automatically update and use your new hotkey.
 
+## 🤖 AI-Powered Writing Assistance
+
+Parrot Transcriber can optionally enhance your speech using local AI models to make your writing more coherent and context-aware.
+
+### How It Works:
+
+1. **Context Analysis:** When enabled, the application takes a screenshot when you release the hotkey and analyzes:
+   - The platform you're using (email, chat, document, etc.)
+   - Previous messages or text in the conversation
+   - The appropriate writing style (formal vs. informal)
+
+2. **Intelligent Enhancement:** The AI preserves your meaning while improving:
+   - Sentence structure and grammar
+   - Vocabulary choice based on context
+   - Coherence with previous messages
+   - Platform-specific conventions
+
+3. **Privacy-First:** All processing happens locally using your Ollama models - no data leaves your computer.
+
+### Requirements:
+
+* Ollama installed and running locally
+* At least one multimodal model installed (e.g., `qwen2.5-vl`)
+* Additional Python dependencies (see requirements.txt)
+
+### Configuration:
+
+1. Right-click the system tray icon
+2. Select "AI Writing Settings"
+3. Choose your preferred model and context size
+4. Enable/disable the feature
+
 ##  troubleshooting
 
 *   **Hotkey Not Working / Application Not Responding:**
@@ -77,6 +110,10 @@ To change the hotkey:
     *   Ensure your microphone is properly configured and selected as the default input device in Windows sound settings.
     *   Speak clearly and at a moderate pace.
     *   The application automatically handles microphone sample rates, but very unusual configurations might still cause issues.
+*   **AI Processing Issues:**
+    *   Ensure Ollama is running and the selected model is installed
+    *   Check that you have sufficient VRAM for the chosen model
+    *   Try reducing the context size if processing is too slow
 *   **Application Not Quitting:**
     *   Right-click the system tray icon and select "Quit." This is the proper way to shut down the application.
 

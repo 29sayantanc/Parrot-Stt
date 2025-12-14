@@ -6,3 +6,5 @@ pyperclip
 numpy
 scipy
 soundfile
+Pillow
+requests
