@@ -63,14 +63,14 @@ This feature relies on **Ollama**, a powerful tool for running large language mo
     *   Download and install Ollama from the [official website](https://ollama.com/).
 
 2.  **Install a Vision Model:**
-    *   Parrot needs a **multimodal (vision)** model to analyze screenshots. Open your command prompt or terminal and pull a model. We recommend starting with a smaller, fast model like `llava` or `qwen`.
+    *   Parrot needs a **multimodal (vision)** model to analyze screenshots. Open your command prompt or terminal and pull a model. We recommend starting with a smaller, fast model like  `qwen`.
     *   Run the following command:
         ```bash
-        ollama pull llava
+        ollama pull <your model name>
         ```
         or
         ```bash
-        ollama pull qwen:1.8b
+        ollama pull qwen2.5vl:3b
         ```
 
 ### How It Works
